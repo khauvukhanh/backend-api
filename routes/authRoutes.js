@@ -1,218 +1,82 @@
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const auth = require('../middleware/authMiddleware');
 
-// Email validation regex pattern
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/**
- * @swagger
- * components:
- *   schemas:
- *     User:
- *       type: object
- *       required:
- *         - name
- *         - email
- *         - password
- *       properties:
- *         _id:
- *           type: string
- *           description: Auto-generated ID of the user
- *         name:
- *           type: string
- *           description: Name of the user
- *         email:
- *           type: string
- *           format: email
- *           description: Email address of the user
- *         password:
- *           type: string
- *           description: Hashed password of the user
- *         role:
- *           type: string
- *           enum: [user, admin]
- *           description: Role of the user
- *         createdAt:
- *           type: string
- *           format: date-time
- *         updatedAt:
- *           type: string
- *           format: date-time
- *     LoginRequest:
- *       type: object
- *       required:
- *         - email
- *         - password
- *       properties:
- *         email:
- *           type: string
- *           format: email
- *         password:
- *           type: string
- *           format: password
- *     RegisterRequest:
- *       type: object
- *       required:
- *         - name
- *         - email
- *         - password
- *       properties:
- *         name:
- *           type: string
- *         email:
- *           type: string
- *           format: email
- *         password:
- *           type: string
- *           format: password
- *     AuthResponse:
- *       type: object
- *       properties:
- *         token:
- *           type: string
- *           description: JWT token for authentication
- */
-
-/**
- * @swagger
- * /api/auth/register:
- *   post:
- *     summary: Register a new user
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/RegisterRequest'
- *     responses:
- *       201:
- *         description: User registered successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
- *       400:
- *         description: Invalid input or email already exists
- */
+// Register route
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Validate email format
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ message: 'Invalid email format' });
-    }
-
     // Check if user already exists
-    let user = await User.findOne({ email });
-    if (user) {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
     // Create new user
-    user = new User({
-      name,
-      email,
-      password: hashedPassword
-    });
-
+    const user = new User({ name, email, password });
     await user.save();
 
     // Generate JWT token
     const token = jwt.sign(
       { userId: user._id },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
     );
 
-    res.status(201).json({ token });
+    res.status(201).json({ user, token });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 });
 
-/**
- * @swagger
- * /api/auth/login:
- *   post:
- *     summary: Login user and get JWT token
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/LoginRequest'
- *     responses:
- *       200:
- *         description: Login successful
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
- *       400:
- *         description: Invalid credentials
- */
+// Login route
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Check if user exists
+    // Find user
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Verify password
-    const isMatch = await bcrypt.compare(password, user.password);
+    // Check password
+    const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Generate JWT token
     const token = jwt.sign(
       { userId: user._id },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
     );
 
-    res.json({ token });
+    res.json({ user, token });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 });
 
-/**
- * @swagger
- * /api/auth/me:
- *   get:
- *     summary: Get current user profile
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: User profile retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/User'
- *       401:
- *         description: Not authenticated
- */
-router.get('/me', auth, async (req, res) => {
+// Get user profile (protected route)
+router.get('/profile', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select('-password');
-    res.json(user);
+    // The user object is already attached to the request by the auth middleware
+    const user = req.user;
+    
+    // Remove sensitive information
+    const userProfile = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      createdAt: user.createdAt
+    };
+
+    res.json(userProfile);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
