@@ -26,18 +26,24 @@ const auth = require('../middleware/authMiddleware');
  *           description: Description of the product
  *         price:
  *           type: number
- *           description: Price of the product
- *         category:
- *           type: string
- *           description: Category ID the product belongs to
- *         stock:
+ *           description: Regular price of the product
+ *         discountPrice:
  *           type: number
- *           description: Available stock of the product
+ *           description: Discounted price of the product (optional)
+ *         thumbnail:
+ *           type: string
+ *           description: URL of the product thumbnail image
  *         images:
  *           type: array
  *           items:
  *             type: string
- *           description: Array of image URLs
+ *           description: Array of product image URLs
+ *         category:
+ *           type: string
+ *           description: ID of the category this product belongs to
+ *         stock:
+ *           type: number
+ *           description: Available stock quantity
  *         isActive:
  *           type: boolean
  *           description: Whether the product is active
@@ -53,7 +59,7 @@ const auth = require('../middleware/authMiddleware');
  * @swagger
  * /api/products:
  *   get:
- *     summary: Get all products
+ *     summary: Get all active products
  *     tags: [Products]
  *     responses:
  *       200:
@@ -67,7 +73,49 @@ const auth = require('../middleware/authMiddleware');
  */
 router.get('/', async (req, res) => {
   try {
-    const products = await Product.find({ isActive: true }).populate('category');
+    const products = await Product.find({ isActive: true })
+      .populate('category', 'name')
+      .select('-__v');
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/products/category/{categoryId}:
+ *   get:
+ *     summary: Get all products by category ID
+ *     tags: [Products]
+ *     parameters:
+ *       - in: path
+ *         name: categoryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Category ID
+ *     responses:
+ *       200:
+ *         description: List of products in the category
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Product'
+ *       404:
+ *         description: Category not found
+ */
+router.get('/category/:categoryId', async (req, res) => {
+  try {
+    const products = await Product.find({ 
+      category: req.params.categoryId,
+      isActive: true 
+    })
+      .populate('category', 'name')
+      .select('-__v');
+    
     res.json(products);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -99,7 +147,9 @@ router.get('/', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id).populate('category');
+    const product = await Product.findById(req.params.id)
+      .populate('category', 'name')
+      .select('-__v');
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
@@ -135,14 +185,18 @@ router.get('/:id', async (req, res) => {
  *                 type: string
  *               price:
  *                 type: number
- *               category:
- *                 type: string
- *               stock:
+ *               discountPrice:
  *                 type: number
+ *               thumbnail:
+ *                 type: string
  *               images:
  *                 type: array
  *                 items:
  *                   type: string
+ *               category:
+ *                 type: string
+ *               stock:
+ *                 type: number
  *     responses:
  *       201:
  *         description: Product created successfully
@@ -155,14 +209,33 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', auth, async (req, res) => {
   try {
+    const {
+      name,
+      description,
+      price,
+      discountPrice,
+      thumbnail,
+      images,
+      category,
+      stock
+    } = req.body;
+
+    // Validate discount price
+    if (discountPrice && discountPrice >= price) {
+      return res.status(400).json({ message: 'Discount price must be less than regular price' });
+    }
+
     const product = new Product({
-      name: req.body.name,
-      description: req.body.description,
-      price: req.body.price,
-      category: req.body.category,
-      stock: req.body.stock,
-      images: req.body.images
+      name,
+      description,
+      price,
+      discountPrice,
+      thumbnail,
+      images,
+      category,
+      stock
     });
+
     const newProduct = await product.save();
     res.status(201).json(newProduct);
   } catch (error) {
@@ -197,14 +270,18 @@ router.post('/', auth, async (req, res) => {
  *                 type: string
  *               price:
  *                 type: number
- *               category:
- *                 type: string
- *               stock:
+ *               discountPrice:
  *                 type: number
+ *               thumbnail:
+ *                 type: string
  *               images:
  *                 type: array
  *                 items:
  *                   type: string
+ *               category:
+ *                 type: string
+ *               stock:
+ *                 type: number
  *               isActive:
  *                 type: boolean
  *     responses:
@@ -219,18 +296,39 @@ router.post('/', auth, async (req, res) => {
  */
 router.put('/:id', auth, async (req, res) => {
   try {
+    const {
+      name,
+      description,
+      price,
+      discountPrice,
+      thumbnail,
+      images,
+      category,
+      stock,
+      isActive
+    } = req.body;
+
     const product = await Product.findById(req.params.id);
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
-    product.name = req.body.name || product.name;
-    product.description = req.body.description || product.description;
-    product.price = req.body.price || product.price;
-    product.category = req.body.category || product.category;
-    product.stock = req.body.stock !== undefined ? req.body.stock : product.stock;
-    product.images = req.body.images || product.images;
-    product.isActive = req.body.isActive !== undefined ? req.body.isActive : product.isActive;
-    
+
+    // Validate discount price
+    if (discountPrice && discountPrice >= (price || product.price)) {
+      return res.status(400).json({ message: 'Discount price must be less than regular price' });
+    }
+
+    // Update fields
+    if (name) product.name = name;
+    if (description) product.description = description;
+    if (price) product.price = price;
+    if (discountPrice !== undefined) product.discountPrice = discountPrice;
+    if (thumbnail !== undefined) product.thumbnail = thumbnail;
+    if (images) product.images = images;
+    if (category) product.category = category;
+    if (stock !== undefined) product.stock = stock;
+    if (isActive !== undefined) product.isActive = isActive;
+
     const updatedProduct = await product.save();
     res.json(updatedProduct);
   } catch (error) {

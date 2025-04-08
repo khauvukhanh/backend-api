@@ -16,6 +16,26 @@ const productSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
+  discountPrice: {
+    type: Number,
+    min: 0,
+    default: null,
+    validate: {
+      validator: function(value) {
+        return value === null || value < this.price;
+      },
+      message: 'Discount price must be less than regular price'
+    }
+  },
+  thumbnail: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  images: [{
+    type: String,
+    trim: true
+  }],
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
@@ -27,10 +47,6 @@ const productSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
-  images: [{
-    type: String,
-    trim: true
-  }],
   isActive: {
     type: Boolean,
     default: true
