@@ -84,6 +84,87 @@ router.get('/', async (req, res) => {
 
 /**
  * @swagger
+ * /api/products/top-selling:
+ *   get:
+ *     summary: Get top selling products
+ *     tags: [Products]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of products to return
+ *     responses:
+ *       200:
+ *         description: List of top selling products
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Product'
+ */
+router.get('/top-selling', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    
+    // In a real application, you would query the Order model to count products sold
+    // For now, we'll use a placeholder implementation
+    // This would be replaced with actual order data in a production environment
+    const products = await Product.find({ isActive: true })
+      .populate('category', 'name')
+      .select('-__v')
+      .sort({ createdAt: -1 }) // Placeholder sorting - replace with actual sales data
+      .limit(limit);
+    
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/products/new:
+ *   get:
+ *     summary: Get newest products
+ *     tags: [Products]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of products to return
+ *     responses:
+ *       200:
+ *         description: List of newest products
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Product'
+ */
+router.get('/new', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    
+    const products = await Product.find({ isActive: true })
+      .populate('category', 'name')
+      .select('-__v')
+      .sort({ createdAt: -1 })
+      .limit(limit);
+    
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/**
+ * @swagger
  * /api/products/category/{categoryId}:
  *   get:
  *     summary: Get all products by category ID
