@@ -185,26 +185,33 @@ router.get('/:id', auth, async (req, res) => {
  */
 router.post('/', auth, async (req, res) => {
   try {
-    const { shippingAddress } = req.body;
-
     // Get user's cart
-    const cart = await Cart.findOne({ user: req.user.userId }).populate('items.product');
+    const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
     if (!cart || cart.items.length === 0) {
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
+    // Check stock availability
+    for (const item of cart.items) {
+      const product = await Product.findById(item.product._id);
+      if (product.stock < item.quantity) {
+        return res.status(400).json({ 
+          message: `Insufficient stock for ${product.name}` 
+        });
+      }
+    }
+
     // Create order
     const order = new Order({
-      user: req.user.userId,
+      user: req.user._id,
       items: cart.items.map(item => ({
         product: item.product._id,
         quantity: item.quantity,
-        price: item.product.price
+        price: item.price
       })),
       totalAmount: cart.totalAmount,
-      shippingAddress,
-      status: 'pending',
-      paymentStatus: 'pending'
+      shippingAddress: req.body.shippingAddress,
+      paymentMethod: req.body.paymentMethod
     });
 
     await order.save();
@@ -215,7 +222,7 @@ router.post('/', auth, async (req, res) => {
     await cart.save();
 
     // Get user's FCM token
-    const user = await User.findById(req.user.userId);
+    const user = await User.findById(req.user._id);
     if (user && user.fcmToken) {
       // Send notification
       await sendNotification(
