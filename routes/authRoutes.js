@@ -116,10 +116,7 @@ router.post('/fcm-token', auth, async (req, res) => {
       return res.status(400).json({ message: 'FCM token is required' });
     }
 
-    const user = await User.findById(req.user.userId);
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
+    const user = req.user;
 
     user.fcmToken = fcmToken;
     await user.save();
