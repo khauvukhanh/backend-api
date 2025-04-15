@@ -1,5 +1,4 @@
 const admin = require('firebase-admin');
-const firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG);
 
 // Initialize Firebase Admin
 admin.initializeApp({
