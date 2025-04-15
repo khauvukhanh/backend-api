@@ -107,6 +107,8 @@ router.get('/profile', auth, async (req, res) => {
  *         description: FCM token updated successfully
  *       400:
  *         description: Invalid input
+ *       404:
+ *         description: User not found
  */
 router.post('/fcm-token', auth, async (req, res) => {
   try {
@@ -116,14 +118,19 @@ router.post('/fcm-token', auth, async (req, res) => {
       return res.status(400).json({ message: 'FCM token is required' });
     }
 
-    const user = req.user;
+    // Use req.user._id instead of req.user.userId
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
     user.fcmToken = fcmToken;
     await user.save();
 
     res.json({ message: 'FCM token updated successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error updating FCM token:', error);
+    res.status(500).json({ message: 'Error updating FCM token' });
   }
 });
 
