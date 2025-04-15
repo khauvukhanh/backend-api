@@ -17,3 +17,4 @@ benchmarks/graphs
 
 .env
 .DS_Store
+firebase-service-account.json

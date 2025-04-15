@@ -1,35 +1,50 @@
 const admin = require('firebase-admin');
+const path = require('path');
+const fs = require('fs');
 
-// Initialize Firebase Admin
-admin.initializeApp({
-  credential: admin.credential.cert({
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-  })
-});
+// Path to the service account file
+const serviceAccountPath = path.join(__dirname, '../firebase-service-account.json');
 
-// Notification service
-const sendNotification = async (token, title, body, data = {}) => {
-  try {
-    const message = {
-      notification: {
-        title,
-        body
-      },
-      data,
-      token
-    };
+// Check if service account file exists
+if (!fs.existsSync(serviceAccountPath)) {
+  console.warn('Firebase service account file not found. Push notifications will be disabled.');
+  module.exports = {
+    admin: null,
+    sendNotification: async () => {
+      console.warn('Push notifications are disabled because Firebase is not configured.');
+      return null;
+    }
+  };
+} else {
+  // Initialize Firebase Admin with service account
+  const serviceAccount = require(serviceAccountPath);
+  
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
 
-    const response = await admin.messaging().send(message);
-    return response;
-  } catch (error) {
-    console.error('Error sending notification:', error);
-    throw error;
-  }
-};
+  // Notification service
+  const sendNotification = async (token, title, body, data = {}) => {
+    try {
+      const message = {
+        notification: {
+          title,
+          body
+        },
+        data,
+        token
+      };
 
-module.exports = {
-  admin,
-  sendNotification
-}; 
+      const response = await admin.messaging().send(message);
+      return response;
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      throw error;
+    }
+  };
+
+  module.exports = {
+    admin,
+    sendNotification
+  };
+} 
