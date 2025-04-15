@@ -4,6 +4,8 @@ const Order = require('../models/Order');
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const auth = require('../middleware/authMiddleware');
+const User = require('../models/User');
+const { sendNotification } = require('../config/firebase');
 
 /**
  * @swagger
@@ -146,7 +148,7 @@ router.get('/:id', auth, async (req, res) => {
  * @swagger
  * /api/orders:
  *   post:
- *     summary: Create a new order from cart
+ *     summary: Create a new order
  *     tags: [Orders]
  *     security:
  *       - bearerAuth: []
@@ -158,70 +160,78 @@ router.get('/:id', auth, async (req, res) => {
  *             type: object
  *             required:
  *               - shippingAddress
- *               - paymentMethod
  *             properties:
  *               shippingAddress:
- *                 $ref: '#/components/schemas/ShippingAddress'
- *               paymentMethod:
- *                 type: string
+ *                 type: object
+ *                 required:
+ *                   - street
+ *                   - city
+ *                   - state
+ *                   - zipCode
+ *                 properties:
+ *                   street:
+ *                     type: string
+ *                   city:
+ *                     type: string
+ *                   state:
+ *                     type: string
+ *                   zipCode:
+ *                     type: string
  *     responses:
  *       201:
  *         description: Order created successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Order'
  *       400:
  *         description: Invalid input or cart is empty
  */
 router.post('/', auth, async (req, res) => {
   try {
-    const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
+    const { shippingAddress } = req.body;
+
+    // Get user's cart
+    const cart = await Cart.findOne({ user: req.user.userId }).populate('items.product');
     if (!cart || cart.items.length === 0) {
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
-    // Check stock availability
-    for (const item of cart.items) {
-      const product = await Product.findById(item.product._id);
-      if (product.stock < item.quantity) {
-        return res.status(400).json({ 
-          message: `Insufficient stock for ${product.name}` 
-        });
-      }
-    }
-
     // Create order
     const order = new Order({
-      user: req.user._id,
+      user: req.user.userId,
       items: cart.items.map(item => ({
         product: item.product._id,
         quantity: item.quantity,
-        price: item.price
+        price: item.product.price
       })),
       totalAmount: cart.totalAmount,
-      shippingAddress: req.body.shippingAddress,
-      paymentMethod: req.body.paymentMethod
+      shippingAddress,
+      status: 'pending',
+      paymentStatus: 'pending'
     });
 
-    // Update product stock
-    for (const item of cart.items) {
-      const product = await Product.findById(item.product._id);
-      product.stock -= item.quantity;
-      await product.save();
-    }
+    await order.save();
 
-    // Clear cart
+    // Clear the cart
     cart.items = [];
     cart.totalAmount = 0;
     await cart.save();
 
-    // Save order
-    await order.save();
-    const populatedOrder = await order.populate('items.product');
-    res.status(201).json(populatedOrder);
+    // Get user's FCM token
+    const user = await User.findById(req.user.userId);
+    if (user && user.fcmToken) {
+      // Send notification
+      await sendNotification(
+        user.fcmToken,
+        'Order Placed Successfully',
+        `Your order #${order._id} has been placed successfully`,
+        {
+          orderId: order._id.toString(),
+          type: 'order_placed'
+        }
+      );
+    }
+
+    res.status(201).json(order);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(500).json({ message: error.message });
   }
 });
 
