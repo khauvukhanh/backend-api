@@ -225,15 +225,19 @@ router.post('/', auth, async (req, res) => {
     const user = await User.findById(req.user._id);
     if (user && user.fcmToken) {
       // Send notification
-      await sendNotification(
-        user.fcmToken,
-        'Order Placed Successfully',
-        `Your order #${order._id} has been placed successfully`,
-        {
-          orderId: order._id.toString(),
-          type: 'order_placed'
-        }
-      );
+      try {
+        await sendNotification(
+          user.fcmToken,
+          'Order Placed Successfully',
+          `Your order #${order._id} has been placed successfully`,
+          {
+            orderId: order._id.toString(),
+            type: 'order_placed'
+          }
+        );
+      } catch (error) {
+        console.error('Error sending notification:', error);
+      }
     }
 
     res.status(201).json(order);
