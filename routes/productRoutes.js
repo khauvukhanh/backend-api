@@ -449,4 +449,94 @@ router.delete('/:id', auth, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/products/search:
+ *   get:
+ *     summary: Search products by name
+ *     tags: [Products]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Search query
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of products to return
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number for pagination
+ *     responses:
+ *       200:
+ *         description: List of matching products
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 products:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Product'
+ *                 total:
+ *                   type: integer
+ *                   description: Total number of matching products
+ *                 page:
+ *                   type: integer
+ *                   description: Current page number
+ *                 pages:
+ *                   type: integer
+ *                   description: Total number of pages
+ *       400:
+ *         description: Search query is required
+ */
+router.get('/search', async (req, res) => {
+  try {
+    const { q, limit = 10, page = 1 } = req.query;
+
+    if (!q) {
+      return res.status(400).json({ message: 'Search query is required' });
+    }
+
+    const skip = (page - 1) * limit;
+    
+    // Create a case-insensitive regex for the search query
+    const searchRegex = new RegExp(q, 'i');
+
+    // Find products matching the search query
+    const [products, total] = await Promise.all([
+      Product.find({ 
+        name: searchRegex,
+        isActive: true 
+      })
+        .populate('category', 'name')
+        .select('-__v')
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Product.countDocuments({ 
+        name: searchRegex,
+        isActive: true 
+      })
+    ]);
+
+    res.json({
+      products,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit)
+    });
+  } catch (error) {
+    console.error('Error searching products:', error);
+    res.status(500).json({ message: 'Error searching products' });
+  }
+});
+
 module.exports = router; 
