@@ -239,6 +239,18 @@ router.post('/', auth, async (req, res) => {
         console.error('Error sending notification:', error);
       }
     }
+    try {
+      // Save the notification to the table notifications
+      const notification = new Notification({
+        user: req.user._id,
+        title: 'Order Placed Successfully',
+        message: `Your order #${order._id} has been placed successfully`,
+        type: 'order_placed'
+      });
+      await notification.save();
+    } catch (error) {
+      console.error('Error saving notification:', error);
+    }
 
     res.status(201).json(order);
   } catch (error) {
