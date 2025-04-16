@@ -231,9 +231,11 @@ router.get('/:id', async (req, res) => {
     const product = await Product.findById(req.params.id)
       .populate('category', 'name')
       .select('-__v');
+    
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
+    
     res.json(product);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -457,85 +459,95 @@ router.delete('/:id', auth, async (req, res) => {
  *     tags: [Products]
  *     parameters:
  *       - in: query
- *         name: q
+ *         name: name
  *         required: true
  *         schema:
  *           type: string
- *         description: Search query
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
- *         description: Number of products to return
+ *         description: Product name to search for
  *       - in: query
  *         name: page
  *         schema:
  *           type: integer
  *           default: 1
  *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of products per page
  *     responses:
  *       200:
- *         description: List of matching products
+ *         description: List of matching products with pagination info
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
+ *                 currentPage:
+ *                   type: integer
+ *                   description: Current page number
+ *                 totalPages:
+ *                   type: integer
+ *                   description: Total number of pages
+ *                 totalItems:
+ *                   type: integer
+ *                   description: Total number of matching products
  *                 products:
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/Product'
- *                 total:
- *                   type: integer
- *                   description: Total number of matching products
- *                 page:
- *                   type: integer
- *                   description: Current page number
- *                 pages:
- *                   type: integer
- *                   description: Total number of pages
  *       400:
- *         description: Search query is required
+ *         description: Missing name parameter
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Missing name query parameter
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Server error
  */
 router.get('/search', async (req, res) => {
   try {
-    const { q, limit = 10, page = 1 } = req.query;
+    const { name } = req.query;
+    const page = parseInt(req.query.page) || 1;       // Trang hiện tại
+    const limit = parseInt(req.query.limit) || 10;    // Số item/trang
 
-    if (!q) {
-      return res.status(400).json({ message: 'Search query is required' });
+    if (!name) {
+      return res.status(400).json({ error: 'Missing name query parameter' });
     }
 
-    const skip = (page - 1) * limit;
-    
-    // Create a case-insensitive regex for the search query
-    const searchRegex = new RegExp(q, 'i');
+    const query = {
+      name: { $regex: name, $options: 'i' }, // tìm không phân biệt hoa thường
+    };
 
-    // Find products matching the search query
-    const [products, total] = await Promise.all([
-      Product.find({ 
-        name: searchRegex,
-        isActive: true 
-      })
-        .populate('category', 'name')
-        .select('-__v')
-        .skip(skip)
-        .limit(parseInt(limit)),
-      Product.countDocuments({ 
-        name: searchRegex,
-        isActive: true 
-      })
-    ]);
+    const products = await Product.find(query)
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const total = await Product.countDocuments(query);
+    const totalPages = Math.ceil(total / limit);
 
     res.json({
+      currentPage: page,
+      totalPages,
+      totalItems: total,
       products,
-      total,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit)
     });
-  } catch (error) {
-    console.error('Error searching products:', error);
-    res.status(500).json({ message: 'Error searching products' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
