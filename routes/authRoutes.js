@@ -5,7 +5,7 @@ const User = require('../models/User');
 const auth = require('../middleware/authMiddleware');
 
 // Email validation regex
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 // Register route
 router.post('/register', async (req, res) => {
