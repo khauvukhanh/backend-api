@@ -35,6 +35,11 @@ const orderSchema = new mongoose.Schema({
     zipCode: String,
     country: String
   },
+  note: {
+    type: String,
+    trim: true,
+    maxlength: 100
+  },
   status: {
     type: String,
     enum: ['pending', 'processing', 'shipped', 'delivered', 'cancelled'],

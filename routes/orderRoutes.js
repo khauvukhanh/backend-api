@@ -58,6 +58,10 @@ const { sendNotification } = require('../config/firebase');
  *           description: Total amount of the order
  *         shippingAddress:
  *           $ref: '#/components/schemas/ShippingAddress'
+ *         note:
+ *           type: string
+ *           description: Additional notes or comments about the order
+ *           maxLength: 100
  *         status:
  *           type: string
  *           enum: [pending, processing, shipped, delivered, cancelled]
@@ -177,6 +181,10 @@ router.get('/:id', auth, async (req, res) => {
  *                     type: string
  *                   zipCode:
  *                     type: string
+ *               note:
+ *                 type: string
+ *                 description: Additional notes or comments about the order
+ *                 maxLength: 100
  *     responses:
  *       201:
  *         description: Order created successfully
@@ -201,6 +209,11 @@ router.post('/', auth, async (req, res) => {
       }
     }
 
+    // Validate note length if provided
+    if (req.body.note && req.body.note.length > 100) {
+      return res.status(400).json({ message: 'Note cannot exceed 100 characters' });
+    }
+
     // Create order
     const order = new Order({
       user: req.user._id,
@@ -211,7 +224,8 @@ router.post('/', auth, async (req, res) => {
       })),
       totalAmount: cart.totalAmount,
       shippingAddress: req.body.shippingAddress,
-      paymentMethod: req.body.paymentMethod
+      paymentMethod: req.body.paymentMethod,
+      note: req.body.note
     });
 
     await order.save();
