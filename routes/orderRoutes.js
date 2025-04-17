@@ -57,16 +57,7 @@ const { sendNotification } = require('../config/firebase');
  *           type: number
  *           description: Total amount of the order
  *         shippingAddress:
-<<<<<<< HEAD
- *           type: string
- *           description: Shipping address for the order
- *         note:
- *           type: string
- *           description: Additional notes or comments about the order
- *           maxLength: 500
-=======
  *           $ref: '#/components/schemas/ShippingAddress'
->>>>>>> parent of eb2f036 (change shipping address & push notification)
  *         status:
  *           type: string
  *           enum: [pending, processing, shipped, delivered, cancelled]
@@ -171,17 +162,6 @@ router.get('/:id', auth, async (req, res) => {
  *               - shippingAddress
  *             properties:
  *               shippingAddress:
-<<<<<<< HEAD
- *                 type: string
- *                 description: Shipping address for the order
- *               paymentMethod:
- *                 type: string
- *                 description: Payment method to be used
- *               note:
- *                 type: string
- *                 description: Additional notes or comments about the order
- *                 maxLength: 500
-=======
  *                 type: object
  *                 required:
  *                   - street
@@ -197,7 +177,6 @@ router.get('/:id', auth, async (req, res) => {
  *                     type: string
  *                   zipCode:
  *                     type: string
->>>>>>> parent of eb2f036 (change shipping address & push notification)
  *     responses:
  *       201:
  *         description: Order created successfully
@@ -206,20 +185,7 @@ router.get('/:id', auth, async (req, res) => {
  */
 router.post('/', auth, async (req, res) => {
   try {
-<<<<<<< HEAD
-    const { shippingAddress, paymentMethod, note } = req.body;
-
-    if (!shippingAddress || !paymentMethod) {
-      return res.status(400).json({ message: 'Shipping address and payment method are required' });
-    }
-
-    if (note && note.length > 500) {
-      return res.status(400).json({ message: 'Note cannot exceed 500 characters' });
-    }
-
-=======
     // Get user's cart
->>>>>>> parent of eb2f036 (change shipping address & push notification)
     const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
     if (!cart || cart.items.length === 0) {
       return res.status(400).json({ message: 'Cart is empty' });
@@ -244,14 +210,8 @@ router.post('/', auth, async (req, res) => {
         price: item.price
       })),
       totalAmount: cart.totalAmount,
-<<<<<<< HEAD
-      shippingAddress,
-      paymentMethod,
-      note
-=======
       shippingAddress: req.body.shippingAddress,
       paymentMethod: req.body.paymentMethod
->>>>>>> parent of eb2f036 (change shipping address & push notification)
     });
 
     await order.save();
@@ -278,18 +238,6 @@ router.post('/', auth, async (req, res) => {
       } catch (error) {
         console.error('Error sending notification:', error);
       }
-    }
-    try {
-      // Save the notification to the table notifications
-      const notification = new Notification({
-        user: req.user._id,
-        title: 'Order Placed Successfully',
-        message: `Your order #${order._id} has been placed successfully`,
-        type: 'order_placed'
-      });
-      await notification.save();
-    } catch (error) {
-      console.error('Error saving notification:', error);
     }
 
     res.status(201).json(order);

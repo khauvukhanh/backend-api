@@ -29,22 +29,11 @@ const orderSchema = new mongoose.Schema({
     required: true
   },
   shippingAddress: {
-<<<<<<< HEAD
-    type: String,
-    required: true,
-    trim: true,
-  },
-  note: {
-    type: String,
-    trim: true,
-    maxlength: 500,
-=======
     street: String,
     city: String,
     state: String,
     zipCode: String,
     country: String
->>>>>>> parent of eb2f036 (change shipping address & push notification)
   },
   status: {
     type: String,
