@@ -20,52 +20,52 @@ const { sendNotification } = require('../config/firebase');
  *       properties:
  *         product:
  *           type: string
- *           description: Product ID
+ *           description: ID of the product
  *         quantity:
- *           type: number
+ *           type: integer
  *           description: Quantity of the product
  *         price:
  *           type: number
- *           description: Price of the product
- *     ShippingAddress:
- *       type: object
- *       properties:
- *         street:
- *           type: string
- *         city:
- *           type: string
- *         state:
- *           type: string
- *         zipCode:
- *           type: string
- *         country:
- *           type: string
+ *           description: Price of the product at the time of order
  *     Order:
  *       type: object
+ *       required:
+ *         - user
+ *         - items
+ *         - totalAmount
+ *         - shippingAddress
+ *         - paymentMethod
  *       properties:
  *         _id:
  *           type: string
  *           description: Auto-generated ID of the order
  *         user:
  *           type: string
- *           description: User ID who placed the order
+ *           description: ID of the user who placed the order
  *         items:
  *           type: array
  *           items:
  *             $ref: '#/components/schemas/OrderItem'
+ *           description: List of items in the order
  *         totalAmount:
  *           type: number
  *           description: Total amount of the order
  *         shippingAddress:
- *           $ref: '#/components/schemas/ShippingAddress'
+ *           type: string
+ *           description: Shipping address for the order
  *         status:
  *           type: string
  *           enum: [pending, processing, shipped, delivered, cancelled]
+ *           default: pending
+ *           description: Current status of the order
  *         paymentStatus:
  *           type: string
  *           enum: [pending, completed, failed]
+ *           default: pending
+ *           description: Payment status of the order
  *         paymentMethod:
  *           type: string
+ *           description: Payment method used for the order
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -160,101 +160,70 @@ router.get('/:id', auth, async (req, res) => {
  *             type: object
  *             required:
  *               - shippingAddress
+ *               - paymentMethod
  *             properties:
  *               shippingAddress:
- *                 type: object
- *                 required:
- *                   - street
- *                   - city
- *                   - state
- *                   - zipCode
- *                 properties:
- *                   street:
- *                     type: string
- *                   city:
- *                     type: string
- *                   state:
- *                     type: string
- *                   zipCode:
- *                     type: string
+ *                 type: string
+ *                 description: Shipping address for the order
+ *               paymentMethod:
+ *                 type: string
+ *                 description: Payment method to be used
  *     responses:
  *       201:
  *         description: Order created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Order'
  *       400:
- *         description: Invalid input or cart is empty
+ *         description: Invalid input
+ *       500:
+ *         description: Server error
  */
 router.post('/', auth, async (req, res) => {
   try {
-    // Get user's cart
+    const { shippingAddress, paymentMethod } = req.body;
+
+    if (!shippingAddress || !paymentMethod) {
+      return res.status(400).json({ message: 'Shipping address and payment method are required' });
+    }
+
     const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
     if (!cart || cart.items.length === 0) {
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
-    // Check stock availability
-    for (const item of cart.items) {
-      const product = await Product.findById(item.product._id);
-      if (product.stock < item.quantity) {
-        return res.status(400).json({ 
-          message: `Insufficient stock for ${product.name}` 
-        });
-      }
-    }
+    const items = cart.items.map(item => ({
+      product: item.product._id,
+      quantity: item.quantity,
+      price: item.price
+    }));
 
-    // Create order
     const order = new Order({
       user: req.user._id,
-      items: cart.items.map(item => ({
-        product: item.product._id,
-        quantity: item.quantity,
-        price: item.price
-      })),
+      items,
       totalAmount: cart.totalAmount,
-      shippingAddress: req.body.shippingAddress,
-      paymentMethod: req.body.paymentMethod
+      shippingAddress,
+      paymentMethod
     });
 
     await order.save();
+    await Cart.findByIdAndDelete(cart._id);
 
-    // Clear the cart
-    cart.items = [];
-    cart.totalAmount = 0;
-    await cart.save();
-
-    // Get user's FCM token
-    const user = await User.findById(req.user._id);
-    if (user && user.fcmToken) {
-      // Send notification
-      try {
-        await sendNotification(
-          user.fcmToken,
-          'Order Placed Successfully',
-          `Your order #${order._id} has been placed successfully`,
-          {
-            orderId: order._id.toString(),
-            type: 'order_placed'
-          }
-        );
-      } catch (error) {
-        console.error('Error sending notification:', error);
-      }
-    }
-    try {
-      // Save the notification to the table notifications
-      const notification = new Notification({
-        user: req.user._id,
-        title: 'Order Placed Successfully',
-        message: `Your order #${order._id} has been placed successfully`,
-        type: 'order_placed'
-      });
-      await notification.save();
-    } catch (error) {
-      console.error('Error saving notification:', error);
-    }
+    // Send notification
+    await sendAndSaveNotification({
+      userId: req.user._id,
+      title: 'Order Placed',
+      message: `Your order #${order._id} has been placed successfully`,
+      type: 'order',
+      data: { orderId: order._id },
+      fcmToken: req.user.fcmToken
+    });
 
     res.status(201).json(order);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error creating order:', error);
+    res.status(500).json({ message: 'Error creating order' });
   }
 });
 
