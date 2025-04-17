@@ -53,6 +53,10 @@ const { sendNotification } = require('../config/firebase');
  *         shippingAddress:
  *           type: string
  *           description: Shipping address for the order
+ *         note:
+ *           type: string
+ *           description: Additional notes or comments about the order
+ *           maxLength: 500
  *         status:
  *           type: string
  *           enum: [pending, processing, shipped, delivered, cancelled]
@@ -168,6 +172,10 @@ router.get('/:id', auth, async (req, res) => {
  *               paymentMethod:
  *                 type: string
  *                 description: Payment method to be used
+ *               note:
+ *                 type: string
+ *                 description: Additional notes or comments about the order
+ *                 maxLength: 500
  *     responses:
  *       201:
  *         description: Order created successfully
@@ -182,10 +190,14 @@ router.get('/:id', auth, async (req, res) => {
  */
 router.post('/', auth, async (req, res) => {
   try {
-    const { shippingAddress, paymentMethod } = req.body;
+    const { shippingAddress, paymentMethod, note } = req.body;
 
     if (!shippingAddress || !paymentMethod) {
       return res.status(400).json({ message: 'Shipping address and payment method are required' });
+    }
+
+    if (note && note.length > 500) {
+      return res.status(400).json({ message: 'Note cannot exceed 500 characters' });
     }
 
     const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
@@ -204,7 +216,8 @@ router.post('/', auth, async (req, res) => {
       items,
       totalAmount: cart.totalAmount,
       shippingAddress,
-      paymentMethod
+      paymentMethod,
+      note
     });
 
     await order.save();

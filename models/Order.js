@@ -29,7 +29,12 @@ const orderSchema = new mongoose.Schema({
   shippingAddress: {
     type: String,
     required: true,
-    trim: true
+    trim: true,
+  },
+  note: {
+    type: String,
+    trim: true,
+    maxlength: 500,
   },
   status: {
     type: String,
