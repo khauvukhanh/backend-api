@@ -1,32 +1,35 @@
 const mongoose = require('mongoose');
 
+const orderItemSchema = new mongoose.Schema({
+  product: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product',
+    required: true
+  },
+  quantity: {
+    type: Number,
+    required: true,
+    min: 1
+  },
+  price: {
+    type: Number,
+    required: true
+  }
+});
+
 const orderSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  items: [{
-    product: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Product',
-      required: true
-    },
-    quantity: {
-      type: Number,
-      required: true,
-      min: 1
-    },
-    price: {
-      type: Number,
-      required: true
-    }
-  }],
+  items: [orderItemSchema],
   totalAmount: {
     type: Number,
     required: true
   },
   shippingAddress: {
+<<<<<<< HEAD
     type: String,
     required: true,
     trim: true,
@@ -35,6 +38,13 @@ const orderSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxlength: 500,
+=======
+    street: String,
+    city: String,
+    state: String,
+    zipCode: String,
+    country: String
+>>>>>>> parent of eb2f036 (change shipping address & push notification)
   },
   status: {
     type: String,
@@ -54,11 +64,4 @@ const orderSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for faster queries
-orderSchema.index({ user: 1, createdAt: -1 });
-orderSchema.index({ status: 1 });
-orderSchema.index({ paymentStatus: 1 });
-
-const Order = mongoose.model('Order', orderSchema);
-
-module.exports = Order; 
+module.exports = mongoose.model('Order', orderSchema); 
