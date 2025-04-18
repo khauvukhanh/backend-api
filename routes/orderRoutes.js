@@ -3,6 +3,7 @@ const router = express.Router();
 const Order = require('../models/Order');
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
+const Notification = require('../models/Notification');
 const auth = require('../middleware/authMiddleware');
 const User = require('../models/User');
 const { sendNotification } = require('../config/firebase');
@@ -82,28 +83,142 @@ const { sendNotification } = require('../config/firebase');
  * @swagger
  * /api/orders:
  *   get:
- *     summary: Get user's orders
+ *     summary: Get user's orders with filtering and pagination
  *     tags: [Orders]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of orders per page
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, processing, shipped, delivered, cancelled]
+ *         description: Filter orders by status
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter orders created after this date (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter orders created before this date (YYYY-MM-DD)
  *     responses:
  *       200:
- *         description: List of user's orders
+ *         description: List of orders
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Order'
+ *               type: object
+ *               properties:
+ *                 orders:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Order'
+ *                 total:
+ *                   type: integer
+ *                 page:
+ *                   type: integer
+ *                 pages:
+ *                   type: integer
+ *                 statusCounts:
+ *                   type: object
+ *                   description: Count of orders by status
+ *                   properties:
+ *                     pending:
+ *                       type: integer
+ *                     processing:
+ *                       type: integer
+ *                     shipped:
+ *                       type: integer
+ *                     delivered:
+ *                       type: integer
+ *                     cancelled:
+ *                       type: integer
  */
 router.get('/', auth, async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.user._id })
-      .populate('items.product')
-      .sort({ createdAt: -1 });
-    res.json(orders);
+    const { 
+      page = 1, 
+      limit = 10, 
+      status,
+      startDate,
+      endDate
+    } = req.query;
+
+    const skip = (page - 1) * limit;
+    const query = { user: req.user._id };
+
+    // Add status filter if provided
+    if (status) {
+      query.status = status;
+    }
+
+    // Add date range filter if provided
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.createdAt.$lte = new Date(endDate);
+      }
+    }
+
+    // Get orders with pagination
+    const [orders, total] = await Promise.all([
+      Order.find(query)
+        .populate('items.product')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Order.countDocuments(query)
+    ]);
+
+    // Get count of orders by status
+    const statusCounts = await Order.aggregate([
+      { $match: { user: req.user._id } },
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ]);
+
+    // Format status counts
+    const formattedStatusCounts = {
+      pending: 0,
+      processing: 0,
+      shipped: 0,
+      delivered: 0,
+      cancelled: 0
+    };
+
+    statusCounts.forEach(item => {
+      formattedStatusCounts[item._id] = item.count;
+    });
+
+    res.json({
+      orders,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+      statusCounts: formattedStatusCounts
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error fetching orders:', error);
+    res.status(500).json({ message: 'Error fetching orders' });
   }
 });
 
@@ -264,7 +379,7 @@ router.post('/', auth, async (req, res) => {
  * @swagger
  * /api/orders/{id}/status:
  *   put:
- *     summary: Update order status (Admin only)
+ *     summary: Update order status
  *     tags: [Orders]
  *     security:
  *       - bearerAuth: []
@@ -274,6 +389,7 @@ router.post('/', auth, async (req, res) => {
  *         required: true
  *         schema:
  *           type: string
+ *         description: Order ID
  *     requestBody:
  *       required: true
  *       content:
@@ -286,6 +402,7 @@ router.post('/', auth, async (req, res) => {
  *               status:
  *                 type: string
  *                 enum: [pending, processing, shipped, delivered, cancelled]
+ *                 description: New status of the order
  *     responses:
  *       200:
  *         description: Order status updated successfully
@@ -293,23 +410,81 @@ router.post('/', auth, async (req, res) => {
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Order'
- *       404:
- *         description: Order not found
+ *       400:
+ *         description: Invalid status or order not found
+ *       403:
+ *         description: Not authorized to update this order
+ *       500:
+ *         description: Server error
  */
 router.put('/:id/status', auth, async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id);
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
+    const { status } = req.body;
+    const orderId = req.params.id;
+
+    // Validate status
+    const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ 
+        message: 'Invalid status. Must be one of: pending, processing, shipped, delivered, cancelled' 
+      });
     }
 
-    order.status = req.body.status;
-    await order.save();
-    
-    const updatedOrder = await order.populate('items.product');
-    res.json(updatedOrder);
+    // Find and update order
+    const order = await Order.findOneAndUpdate(
+      { 
+        _id: orderId,
+        user: req.user._id // Ensure user can only update their own orders
+      },
+      { status },
+      { new: true }
+    ).populate('items.product');
+
+    if (!order) {
+      return res.status(400).json({ message: 'Order not found' });
+    }
+
+    // Get user's FCM token
+    const user = await User.findById(req.user._id);
+    if (user && user.fcmToken) {
+      // Send push notification
+      try {
+        await sendNotification(
+          user.fcmToken,
+          'Order Status Updated',
+          `Your order #${order._id} status has been updated to ${status}`,
+          {
+            orderId: order._id.toString(),
+            status: status,
+            type: 'order_status_update'
+          }
+        );
+      } catch (error) {
+        console.error('Error sending push notification:', error);
+      }
+    }
+
+    // Save notification to database
+    try {
+      const notification = new Notification({
+        user: req.user._id,
+        title: 'Order Status Updated',
+        message: `Your order #${order._id} status has been updated to ${status}`,
+        type: 'order',
+        data: {
+          orderId: order._id,
+          status: status
+        }
+      });
+      await notification.save();
+    } catch (error) {
+      console.error('Error saving notification:', error);
+    }
+
+    res.json(order);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    console.error('Error updating order status:', error);
+    res.status(500).json({ message: 'Error updating order status' });
   }
 });
 

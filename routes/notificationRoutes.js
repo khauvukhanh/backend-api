@@ -48,7 +48,7 @@ const auth = require('../middleware/authMiddleware');
  * @swagger
  * /api/notifications:
  *   get:
- *     summary: Get user's notifications
+ *     summary: Get user's notifications with filtering and pagination
  *     tags: [Notifications]
  *     security:
  *       - bearerAuth: []
@@ -70,6 +70,24 @@ const auth = require('../middleware/authMiddleware');
  *         schema:
  *           type: boolean
  *         description: Filter unread notifications
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [order, promotion, system, other]
+ *         description: Filter by notification type
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter notifications created after this date (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter notifications created before this date (YYYY-MM-DD)
  *     responses:
  *       200:
  *         description: List of notifications
@@ -88,33 +106,61 @@ const auth = require('../middleware/authMiddleware');
  *                   type: integer
  *                 pages:
  *                   type: integer
+ *                 unreadCount:
+ *                   type: integer
+ *                   description: Total number of unread notifications
  */
 router.get('/', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, unread } = req.query;
-    const skip = (page - 1) * limit;
+    const { 
+      page = 1, 
+      limit = 10, 
+      unread, 
+      type,
+      startDate,
+      endDate
+    } = req.query;
 
+    const skip = (page - 1) * limit;
     const query = { user: req.user._id };
+
+    // Add filters if provided
     if (unread === 'true') {
       query.isRead = false;
     }
+    if (type) {
+      query.type = type;
+    }
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.createdAt.$lte = new Date(endDate);
+      }
+    }
 
-    const [notifications, total] = await Promise.all([
+    // Get total count and unread count
+    const [notifications, total, unreadCount] = await Promise.all([
       Notification.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit)),
-      Notification.countDocuments(query)
+      Notification.countDocuments(query),
+      Notification.countDocuments({ user: req.user._id, isRead: false })
     ]);
 
     res.json({
       notifications,
       total,
       page: parseInt(page),
-      pages: Math.ceil(total / limit)
+      pages: Math.ceil(total / limit),
+      unreadCount
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Error fetching notifications:', error);
+    res.status(500).json({ message: 'Error fetching notifications' });
   }
 });
 
